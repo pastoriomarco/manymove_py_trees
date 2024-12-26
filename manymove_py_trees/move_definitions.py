@@ -2,6 +2,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 from manymove_planner.action import MoveManipulator, MoveManipulatorSequence
 from manymove_planner.msg import MovementConfig, MoveManipulatorGoal
+from manymove_planner.srv import PlanManipulator
+from manymove_planner.action import ExecuteTrajectory
+
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from moveit_msgs.msg import RobotTrajectory
 from geometry_msgs.msg import Pose, Point, Quaternion
 
 @dataclass
@@ -135,3 +142,57 @@ def define_sequence_move_goal(moves: List[Move]) -> MoveManipulatorSequence.Goal
         seq_goal.goals.append(move_goal)
 
     return seq_goal
+
+def call_planning_service(node: Node, goal: MoveManipulatorGoal) -> Optional[RobotTrajectory]:
+    """
+    Call the planning service to generate a trajectory.
+    """
+    client = node.create_client(PlanManipulator, 'plan_manipulator')
+    if not client.wait_for_service(timeout_sec=3.0):
+        node.get_logger().error("Planning service 'plan_manipulator' not available.")
+        return None
+
+    request = PlanManipulator.Request()
+    request.goal = goal
+
+    future = client.call_async(request)
+    rclpy.spin_until_future_complete(node, future)
+    if future.result() is not None and future.result().success:
+        node.get_logger().info("Planning service succeeded.")
+        return future.result().trajectory
+    else:
+        node.get_logger().error("Planning service failed.")
+        return None
+
+
+def send_execute_trajectory(node: Node, trajectory: RobotTrajectory) -> bool:
+    """
+    Send a trajectory to the execute trajectory action server.
+    """
+    action_client = ActionClient(node, ExecuteTrajectory, 'execute_manipulator_traj')
+    if not action_client.wait_for_server(timeout_sec=3.0):
+        node.get_logger().error("Execute Trajectory action server not available.")
+        return False
+
+    goal_msg = ExecuteTrajectory.Goal()
+    goal_msg.trajectory = trajectory
+
+    send_goal_future = action_client.send_goal_async(goal_msg)
+    rclpy.spin_until_future_complete(node, send_goal_future)
+
+    goal_handle = send_goal_future.result()
+    if not goal_handle or not goal_handle.accepted:
+        node.get_logger().error("Execute Trajectory goal rejected.")
+        return False
+
+    node.get_logger().info("Execute Trajectory goal accepted.")
+    get_result_future = goal_handle.get_result_async()
+    rclpy.spin_until_future_complete(node, get_result_future)
+
+    result = get_result_future.result()
+    if result.result.success:
+        node.get_logger().info("Trajectory execution succeeded.")
+        return True
+    else:
+        node.get_logger().error(f"Trajectory execution failed: {result.result.message}")
+        return False
