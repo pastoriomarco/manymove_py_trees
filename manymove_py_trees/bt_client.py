@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import rclpy
@@ -7,42 +6,25 @@ from rclpy.node import Node
 import py_trees
 import py_trees_ros
 
+from geometry_msgs.msg import Pose, Point, Quaternion
+
 from manymove_py_trees.move_definitions import (
     define_movement_configs,
     create_move,
-    define_single_move_goal,
 )
-from manymove_py_trees.planning_behavior import PlanningBehaviour
-from manymove_py_trees.execution_behavior import ExecuteTrajectoryBehaviour
-
-from geometry_msgs.msg import Pose, Point, Quaternion
+from manymove_py_trees.tree_helper import create_tree_from_sequences  
 
 import time
 
 def main():
-    """
-    Main entrypoint for our PyTrees-based client:
-      1) Initialize rclpy
-      2) Define moves/configs
-      3) Build a root Sequence with planning and execution
-      4) Tick the tree until completion
-    """
     rclpy.init()
-
     node = rclpy.create_node("bt_client_node")
     node.get_logger().info("BT Client Node started")
 
-    # --------------------------------------------------------------------------
-    # 1) Define Movement Configurations
-    # --------------------------------------------------------------------------
+    # 1) Define configs
     movement_configs = define_movement_configs()
 
-    # --------------------------------------------------------------------------
-    # 2) Define Moves
-    # --------------------------------------------------------------------------
-
-    #Define relevant joint targets and poses:
-
+    # 2) Define move sets
     joint_rest = [0.0, -0.785, 0.785, 0.0, 1.57, 0.0]
     joint_look_sx = [-0.175, -0.419, 1.378, 0.349, 1.535, -0.977]
     joint_look_dx = [0.733, -0.297, 1.378, -0.576, 1.692, 1.291]
@@ -50,239 +32,56 @@ def main():
     named_home = "home"
 
     pick_target = Pose(
-                position=Point(x=0.2, y=-0.1, z=0.15),
-                orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
-            )
-    
-    approach_target = pick_target
-    approach_target._position._z += 0.05
+        position=Point(x=0.2, y=-0.1, z=0.15),
+        orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
+    )
 
-    # Define two sets of moves
+    approach_target = Pose(
+        position=Point(x=0.2, y=-0.1, z=pick_target.position.x + 0.05),
+        orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
+    )
+
+    # Exactly like your original definitions:
     scan_surroundings = [
-        create_move(
-            movement_type="joint",
-            joint_values=joint_rest,
-            config=movement_configs["mid_move"]
-        ),
-        create_move(
-            movement_type="joint",
-            joint_values=joint_look_sx,
-            config=movement_configs["max_move"]
-        ),
-        create_move(
-            movement_type="joint",
-            joint_values=joint_look_dx,
-            config=movement_configs["max_move"]
-        ),
-        create_move(
-            movement_type="joint",
-            joint_values=joint_rest,
-            config=movement_configs["mid_move"]
-        )
+        create_move("joint", joint_values=joint_rest, config=movement_configs["mid_move"]),
+        create_move("joint", joint_values=joint_look_sx, config=movement_configs["max_move"]),
+        create_move("joint", joint_values=joint_look_dx, config=movement_configs["max_move"]),
+        create_move("joint", joint_values=joint_rest, config=movement_configs["mid_move"]),
     ]
 
     pick_sequence = [
-        create_move(
-            movement_type="named",
-            named_target=named_home,
-            config=movement_configs["mid_move"]
-        ),
-        create_move(
-            movement_type="pose",
-            target=approach_target,
-            config=movement_configs["mid_move"]
-        ),
-        create_move(
-            movement_type="cartesian",
-            target=Pose(
-                position=Point(x=0.2, y=-0.1, z=0.15),
-                orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
-            ),
-            config=movement_configs["slow_move"]
-        ),
-        create_move(
-            movement_type="cartesian",
-            target=approach_target,
-            config=movement_configs["max_move"]
-        )
+        create_move("pose", target=approach_target, config=movement_configs["mid_move"]),
+        create_move("cartesian", target=pick_target, config=movement_configs["slow_move"]),
+        create_move("cartesian", target=approach_target, config=movement_configs["max_move"]),
     ]
 
     rest_and_home = [
-        
-        create_move(
-            movement_type="joint",
-            joint_values=joint_rest,
-            config=movement_configs["max_move"]
-        ),
-        create_move(
-            movement_type="named",
-            named_target=named_home,
-            config=movement_configs["mid_move"]
-        )
+        create_move("joint", joint_values=joint_rest, config=movement_configs["max_move"]),
+        create_move("named", named_target=named_home, config=movement_configs["mid_move"]),
     ]
 
-    # --------------------------------------------------------------------------
-    # 3) Create BlackBoard Keys
-    # --------------------------------------------------------------------------
-    blackboard = py_trees.blackboard.Blackboard()
+    # 3) Build the tree with our parallel plan/exec logic
+    list_of_sequences = [scan_surroundings, pick_sequence, rest_and_home]
+    bt_tree = create_tree_from_sequences(node, list_of_sequences, root_name="RootSequence")
 
-    # Keys for Set 1
-    planned_trajectory_keys_set_scan_s = [f"planned_trajectory_keys_set_scan_s_{i}" for i in range(len(scan_surroundings))]
-    trajectory_valid_keys_set_scan_s = [f"trajectory_valid_keys_set_scan_s_{i}" for i in range(len(scan_surroundings))]
-
-    # Keys for Set 2
-    planned_trajectory_keys_set_pick_move = [f"planned_trajectory_keys_set_pick_move_{i}" for i in range(len(pick_sequence))]
-    trajectory_valid_keys_set_pick_move = [f"trajectory_valid_keys_set_pick_move_{i}" for i in range(len(pick_sequence))]
-
-    # Keys for Set 2
-    planned_trajectory_keys_set_home = [f"planned_trajectory_keys_set_home_{i}" for i in range(len(rest_and_home))]
-    trajectory_valid_keys_set_home = [f"trajectory_valid_keys_set_home_{i}" for i in range(len(rest_and_home))]
-
-    # --------------------------------------------------------------------------
-    # 4) Create Planning and Execution Branches
-    # --------------------------------------------------------------------------
-
-    # PlanScanSurroundings
-    plan_branch_scan_s = py_trees.composites.Sequence(name="PlanScanSurroundings", memory=True)
-    for i, move in enumerate(scan_surroundings):
-        move_goal = define_single_move_goal(move)
-        plan_branch_scan_s.add_child(
-            PlanningBehaviour(
-                name=f"PlanMoveScanSurroundings_{i}",
-                goal=move_goal.goal,
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_scan_s[i],
-                validity_key=trajectory_valid_keys_set_scan_s[i],
-                previous_key=planned_trajectory_keys_set_scan_s[i - 1] if i > 0 else None,
-                node=node
-            )
-        )
-
-    # ExecScanSurroundings
-    exec_branch_scan_s = py_trees.composites.Sequence(name="ExecScanSurroundings", memory=True)
-    for i in range(len(scan_surroundings)):
-        exec_branch_scan_s.add_child(
-            ExecuteTrajectoryBehaviour(
-                name=f"ExecuteMoveScanSurroundings_{i}",
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_scan_s[i],
-                validity_key=trajectory_valid_keys_set_scan_s[i],
-                node=node
-            )
-        )
-
-    # PlanPickMove
-    plan_branch_pick_move = py_trees.composites.Sequence(name="PlanPickMove", memory=True)
-    for i, move in enumerate(pick_sequence):
-        move_goal = define_single_move_goal(move)
-        plan_branch_pick_move.add_child(
-            PlanningBehaviour(
-                name=f"PlanMovePickMove_{i}",
-                goal=move_goal.goal,
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_pick_move[i],
-                validity_key=trajectory_valid_keys_set_pick_move[i],
-                previous_key=planned_trajectory_keys_set_scan_s[-1] if i == 0 else planned_trajectory_keys_set_pick_move[i - 1],
-                node=node
-            )
-        )
-
-    # ExecPickMove
-    exec_branch_pick_move = py_trees.composites.Sequence(name="ExecPickMove", memory=True)
-    for i in range(len(pick_sequence)):
-        exec_branch_pick_move.add_child(
-            ExecuteTrajectoryBehaviour(
-                name=f"ExecuteMovePickMove_{i}",
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_pick_move[i],
-                validity_key=trajectory_valid_keys_set_pick_move[i],
-                node=node
-            )
-        )
-
-    # PlanRestHome
-    plan_branch_rest_home = py_trees.composites.Sequence(name="PlanRestHome", memory=True)
-    for i, move in enumerate(rest_and_home):
-        move_goal = define_single_move_goal(move)
-        plan_branch_rest_home.add_child(
-            PlanningBehaviour(
-                name=f"PlanMoveRestHome_{i}",
-                goal=move_goal.goal,
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_home[i],
-                validity_key=trajectory_valid_keys_set_home[i],
-                previous_key=planned_trajectory_keys_set_pick_move[-1] if i == 0 else planned_trajectory_keys_set_home[i - 1],
-                node=node
-            )
-        )
-
-    # ExecRestHome
-    exec_branch_rest_home = py_trees.composites.Sequence(name="ExecRestHome", memory=True)
-    for i in range(len(rest_and_home)):
-        exec_branch_rest_home.add_child(
-            ExecuteTrajectoryBehaviour(
-                name=f"ExecuteMoveRestHome_{i}",
-                blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set_home[i],
-                validity_key=trajectory_valid_keys_set_home[i],
-                node=node
-            )
-        )
-
-    # Parallel Node for ExecScanSurroundings and PlanPickMove
-    parallel_execScan_PlanPick = py_trees.composites.Parallel(
-        name="ExecScanSurroundings_and_PlanPickMove",
-        policy=py_trees.common.ParallelPolicy.SuccessOnAll()  # All children must succeed
-    )
-    parallel_execScan_PlanPick.add_child(exec_branch_scan_s)
-    parallel_execScan_PlanPick.add_child(plan_branch_pick_move)
-
-    # Parallel Node for ExecPickMove and PlanRestHome
-    parallel_execPick_planHome = py_trees.composites.Parallel(
-        name="ExecPickMove_and_PlanRestHome",
-        policy=py_trees.common.ParallelPolicy.SuccessOnAll()  # All children must succeed
-    )
-    parallel_execPick_planHome.add_child(exec_branch_pick_move)
-    parallel_execPick_planHome.add_child(plan_branch_rest_home)
-
-    # Sequence Node for ExecBranch_2 after Parallel Nodes
-    execHome = py_trees.composites.Sequence(name="execHomePlan", memory=True)
-    execHome.add_child(parallel_execPick_planHome)
-    execHome.add_child(exec_branch_rest_home)
-
-    # --------------------------------------------------------------------------
-    # 5) Build the Behavior Tree
-    # --------------------------------------------------------------------------
-    root = py_trees.composites.Sequence(name="RootSequence", memory=True)
-    root.add_child(plan_branch_scan_s)
-    root.add_child(parallel_execScan_PlanPick)
-    root.add_child(execHome)
-
-    bt_tree = py_trees_ros.trees.BehaviourTree(root)
-
-    # --------------------------------------------------------------------------
-    # 6) Setup the tree
-    # --------------------------------------------------------------------------
+    # 4) Setup
     try:
         bt_tree.setup(node=node, timeout=10.0)
     except Exception as e:
-        node.get_logger().error(f"Failed to setup BehaviourTree: {e}")
+        node.get_logger().error(f"Failed to setup BT: {e}")
         rclpy.shutdown()
         return
 
-    # --------------------------------------------------------------------------
-    # 7) Tick the tree until completion
-    # --------------------------------------------------------------------------
+    # 5) Tick until done
     try:
         while rclpy.ok():
             bt_tree.tick()
-
-            root_status = root.status
-            if root_status == py_trees.common.Status.SUCCESS:
-                node.get_logger().info("Behaviour Tree completed successfully.")
+            status = bt_tree.root.status
+            if status == py_trees.common.Status.SUCCESS:
+                node.get_logger().info("Tree completed successfully.")
                 break
-            elif root_status == py_trees.common.Status.FAILURE:
-                node.get_logger().error("Behaviour Tree failed.")
+            elif status == py_trees.common.Status.FAILURE:
+                node.get_logger().error("Tree failed.")
                 break
 
             rclpy.spin_once(node, timeout_sec=0.01)
@@ -291,13 +90,10 @@ def main():
     except KeyboardInterrupt:
         node.get_logger().info("Keyboard Interrupt, exiting...")
 
-    # --------------------------------------------------------------------------
-    # 8) Clean up
-    # --------------------------------------------------------------------------
+    # 6) Shutdown
     bt_tree.shutdown()
     node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

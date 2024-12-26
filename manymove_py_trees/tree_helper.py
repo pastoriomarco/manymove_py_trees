@@ -1,4 +1,4 @@
-# src/manymove_py_trees/manymove_py_trees/tree_creation_helpers.py
+# src/manymove_py_trees/manymove_py_trees/tree_helper.py
 
 import py_trees
 import py_trees_ros
@@ -13,84 +13,130 @@ def create_tree_from_sequences(
     root_name: str = "RootSequence"
 ) -> py_trees_ros.trees.BehaviourTree:
     """
-    Creates a Behavior Tree from a list of move-sequences.
+    Creates a Behavior Tree that matches the "parallel plan & execute" logic
+    seen in the old version:
+    
+      1) Plan the first sequence fully.
+      2) Parallel: Exec the first sequence, Plan the second.
+      3) Parallel: Exec the second sequence, Plan the third.
+      ...
+      N) Finally, execute the last sequence alone.
 
-    :param node: The ROS 2 node.
-    :param list_of_move_sequences: A list where each element is a list of `Move` objects.
-                                   Example:
-                                     [
-                                         scan_surroundings,
-                                         pick_sequence,
-                                         rest_and_home
-                                     ]
-    :param root_name: Name of the root behavior.
-    :return: A py_trees_ros.trees.BehaviourTree instance fully set up.
+    This replicates the pattern:
+        RootSequence
+        ├─ PlanSequence_0
+        ├─ Parallel( ExecSequence_0, PlanSequence_1 )
+        ├─ Parallel( ExecSequence_1, PlanSequence_2 )
+        ├─ ...
+        └─ ExecSequence_(n-1)
     """
-    # Create a blackboard
+
+    # Shared blackboard
     blackboard = py_trees.blackboard.Blackboard()
 
-    # Create the root Sequence
-    root = py_trees.composites.Sequence(name=root_name, memory=True)
+    # We'll store planning and execution branches for each sequence
+    plan_branches = []
+    exec_branches = []
 
-    previous_sequence_last_planned_key = None  # To chain sequences if needed
+    # For chaining: store the last trajectory key of each sequence
+    # so that the next sequence’s first move can start from that final position.
+    last_planned_keys_per_seq = []
 
-    for seq_index, move_sequence in enumerate(list_of_move_sequences):
-        # Generate unique Blackboard Keys for the current sequence
+    # ---------------------------------------------------------------
+    # 1) Create all plan/exec branches for each sequence
+    # ---------------------------------------------------------------
+    for seq_index, moves in enumerate(list_of_move_sequences):
+        # Unique blackboard keys for each move in the sequence
         planned_keys = [
-            f"planned_trajectory_seq{seq_index}_move{i}"
-            for i in range(len(move_sequence))
+            f"planned_traj_seq{seq_index}_move{i}" for i in range(len(moves))
         ]
         validity_keys = [
-            f"valid_trajectory_seq{seq_index}_move{i}"
-            for i in range(len(move_sequence))
+            f"valid_traj_seq{seq_index}_move{i}" for i in range(len(moves))
         ]
 
-        # Create a Planning branch for the current sequence
-        plan_branch = py_trees.composites.Sequence(name=f"PlanSequence_{seq_index}", memory=True)
-        for i, move in enumerate(move_sequence):
-            # Convert the Move object into a single MoveManipulator.Goal
-            move_goal = define_single_move_goal(move)
+        # Create planning branch for this sequence
+        plan_branch = py_trees.composites.Sequence(
+            name=f"PlanSequence_{seq_index}", memory=True
+        )
+        for i, move in enumerate(moves):
+            single_goal = define_single_move_goal(move).goal
 
-            # Determine the previous_key for chaining
-            if i == 0 and previous_sequence_last_planned_key is not None:
-                previous_key = previous_sequence_last_planned_key
+            # For the first move of *this* sequence, chain from the last move
+            # of the *previous* sequence if available, otherwise from the
+            # previous move in the same sequence.
+            if i == 0 and seq_index > 0:
+                # chain from the last planned key of the previous sequence
+                previous_key = last_planned_keys_per_seq[seq_index - 1]
             elif i > 0:
+                # chain from the previous move in the same sequence
                 previous_key = planned_keys[i - 1]
             else:
                 previous_key = None
 
-            plan_beh = PlanningBehaviour(
-                name=f"Plan_Seq{seq_index}_Move{i}",
-                goal=move_goal.goal,
+            plan_behavior = PlanningBehaviour(
+                name=f"PlanMove_{seq_index}_{i}",
+                goal=single_goal,
                 blackboard=blackboard,
                 blackboard_key=planned_keys[i],
                 validity_key=validity_keys[i],
                 previous_key=previous_key,
                 node=node
             )
-            plan_branch.add_child(plan_beh)
+            plan_branch.add_child(plan_behavior)
 
-        # Create an Execution branch for the current sequence
-        exec_branch = py_trees.composites.Sequence(name=f"ExecSequence_{seq_index}", memory=True)
-        for i in range(len(move_sequence)):
-            exec_beh = ExecuteTrajectoryBehaviour(
-                name=f"Execute_Seq{seq_index}_Move{i}",
+        # Create execution branch for this sequence
+        exec_branch = py_trees.composites.Sequence(
+            name=f"ExecSequence_{seq_index}", memory=True
+        )
+        for i in range(len(moves)):
+            exec_behavior = ExecuteTrajectoryBehaviour(
+                name=f"ExecuteMove_{seq_index}_{i}",
                 blackboard=blackboard,
                 blackboard_key=planned_keys[i],
                 validity_key=validity_keys[i],
                 node=node
             )
-            exec_branch.add_child(exec_beh)
+            exec_branch.add_child(exec_behavior)
 
-        # Add Planning and Execution branches to the root in sequence
-        root.add_child(plan_branch)
-        root.add_child(exec_branch)
+        plan_branches.append(plan_branch)
+        exec_branches.append(exec_branch)
 
-        # Update the last planned key to the last move of the current sequence
-        if planned_keys:
-            previous_sequence_last_planned_key = planned_keys[-1]
+        # The last planned key of this sequence is the final entry in planned_keys
+        if len(planned_keys) > 0:
+            last_planned_keys_per_seq.append(planned_keys[-1])
+        else:
+            last_planned_keys_per_seq.append(None)  # Shouldn't happen if there are moves
 
-    # Finally, create the ROS Behavior Tree
-    bt_tree = py_trees_ros.trees.BehaviourTree(root)
+    # ---------------------------------------------------------------
+    # 2) Build the root logic to replicate the old "Parallel" pattern
+    # ---------------------------------------------------------------
+    root = py_trees.composites.Sequence(name=root_name, memory=True)
 
-    return bt_tree
+    n = len(list_of_move_sequences)
+    if n == 0:
+        # No sequences to run, just return an empty tree
+        return py_trees_ros.trees.BehaviourTree(root)
+
+    # a) First, plan the 0th sequence
+    root.add_child(plan_branches[0])
+
+    # b) For each subsequent sequence i in [1..n-1],
+    #    add a Parallel( exec seq i-1, plan seq i )
+    #    so that we execute the previous sequence while planning the next
+    for seq_index in range(1, n):
+        parallel_node = py_trees.composites.Parallel(
+            name=f"Parallel_Exec{seq_index-1}_Plan{seq_index}",
+            policy=py_trees.common.ParallelPolicy.SuccessOnAll()
+        )
+        # Exec the previous sequence
+        parallel_node.add_child(exec_branches[seq_index - 1])
+        # Plan the current sequence
+        parallel_node.add_child(plan_branches[seq_index])
+
+        root.add_child(parallel_node)
+
+    # c) Finally, execute the *last* sequence
+    root.add_child(exec_branches[n - 1])
+
+    # Wrap in a ROS BehaviorTree
+    return py_trees_ros.trees.BehaviourTree(root)
