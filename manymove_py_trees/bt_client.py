@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 import rclpy
@@ -39,37 +40,56 @@ def main():
     # --------------------------------------------------------------------------
     # 2) Define Moves
     # --------------------------------------------------------------------------
+
+    #Define relevant joint targets and poses:
+
+    joint_rest = [0.0, -0.785, 0.785, 0.0, 1.57, 0.0]
+    joint_look_sx = [-0.175, -0.419, 1.378, 0.349, 1.535, -0.977]
+    joint_look_dx = [0.733, -0.297, 1.378, -0.576, 1.692, 1.291]
+
+    named_home = "home"
+
+    pick_target = Pose(
+                position=Point(x=0.2, y=-0.1, z=0.15),
+                orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
+            )
+    
+    approach_target = pick_target
+    approach_target._position._z += 0.05
+
     # Define two sets of moves
-    set_1 = [
+    scan_surroundings = [
         create_move(
             movement_type="joint",
-            joint_values=[0.0, -0.785, 0.785, 0.0, 1.57, 0.0],
+            joint_values=joint_rest,
             config=movement_configs["mid_move"]
         ),
         create_move(
             movement_type="joint",
-            joint_values=[-0.175, -0.419, 1.378, 0.349, 1.535, -0.977],
+            joint_values=joint_look_sx,
             config=movement_configs["max_move"]
         ),
         create_move(
             movement_type="joint",
-            joint_values=[0.733, -0.297, 1.378, -0.576, 1.692, 1.291],
+            joint_values=joint_look_dx,
             config=movement_configs["max_move"]
+        ),
+        create_move(
+            movement_type="joint",
+            joint_values=joint_rest,
+            config=movement_configs["mid_move"]
         )
     ]
 
-    set_2 = [
+    pick_sequence = [
         create_move(
             movement_type="named",
-            named_target="home",
+            named_target=named_home,
             config=movement_configs["mid_move"]
         ),
         create_move(
             movement_type="pose",
-            target=Pose(
-                position=Point(x=0.2, y=-0.1, z=0.2),
-                orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
-            ),
+            target=approach_target,
             config=movement_configs["mid_move"]
         ),
         create_move(
@@ -81,8 +101,22 @@ def main():
             config=movement_configs["slow_move"]
         ),
         create_move(
+            movement_type="cartesian",
+            target=approach_target,
+            config=movement_configs["max_move"]
+        )
+    ]
+
+    rest_and_home = [
+        
+        create_move(
             movement_type="joint",
-            joint_values=[0.0, -0.785, 0.785, 0.0, 1.57, 0.0],  # Back to rest
+            joint_values=joint_rest,
+            config=movement_configs["max_move"]
+        ),
+        create_move(
+            movement_type="named",
+            named_target=named_home,
             config=movement_configs["mid_move"]
         )
     ]
@@ -93,94 +127,136 @@ def main():
     blackboard = py_trees.blackboard.Blackboard()
 
     # Keys for Set 1
-    planned_trajectory_keys_set1 = [f"planned_trajectory_set1_{i}" for i in range(len(set_1))]
-    trajectory_valid_keys_set1 = [f"trajectory_valid_set1_{i}" for i in range(len(set_1))]
+    planned_trajectory_keys_set_scan_s = [f"planned_trajectory_keys_set_scan_s_{i}" for i in range(len(scan_surroundings))]
+    trajectory_valid_keys_set_scan_s = [f"trajectory_valid_keys_set_scan_s_{i}" for i in range(len(scan_surroundings))]
 
     # Keys for Set 2
-    planned_trajectory_keys_set2 = [f"planned_trajectory_set2_{i}" for i in range(len(set_2))]
-    trajectory_valid_keys_set2 = [f"trajectory_valid_set2_{i}" for i in range(len(set_2))]
+    planned_trajectory_keys_set_pick_move = [f"planned_trajectory_keys_set_pick_move_{i}" for i in range(len(pick_sequence))]
+    trajectory_valid_keys_set_pick_move = [f"trajectory_valid_keys_set_pick_move_{i}" for i in range(len(pick_sequence))]
+
+    # Keys for Set 2
+    planned_trajectory_keys_set_home = [f"planned_trajectory_keys_set_home_{i}" for i in range(len(rest_and_home))]
+    trajectory_valid_keys_set_home = [f"trajectory_valid_keys_set_home_{i}" for i in range(len(rest_and_home))]
 
     # --------------------------------------------------------------------------
     # 4) Create Planning and Execution Branches
     # --------------------------------------------------------------------------
 
-    # PlanBranch_1
-    plan_branch_1 = py_trees.composites.Sequence(name="PlanBranch_1", memory=True)
-    for i, move in enumerate(set_1):
+    # PlanScanSurroundings
+    plan_branch_scan_s = py_trees.composites.Sequence(name="PlanScanSurroundings", memory=True)
+    for i, move in enumerate(scan_surroundings):
         move_goal = define_single_move_goal(move)
-        plan_branch_1.add_child(
+        plan_branch_scan_s.add_child(
             PlanningBehaviour(
-                name=f"PlanMoveSet1_{i}",
+                name=f"PlanMoveScanSurroundings_{i}",
                 goal=move_goal.goal,
                 blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set1[i],
-                validity_key=trajectory_valid_keys_set1[i],
-                previous_key=planned_trajectory_keys_set1[i - 1] if i > 0 else None,
+                blackboard_key=planned_trajectory_keys_set_scan_s[i],
+                validity_key=trajectory_valid_keys_set_scan_s[i],
+                previous_key=planned_trajectory_keys_set_scan_s[i - 1] if i > 0 else None,
                 node=node
             )
         )
 
-    # ExecBranch_1
-    exec_branch_1 = py_trees.composites.Sequence(name="ExecBranch_1", memory=True)
-    for i in range(len(set_1)):
-        exec_branch_1.add_child(
+    # ExecScanSurroundings
+    exec_branch_scan_s = py_trees.composites.Sequence(name="ExecScanSurroundings", memory=True)
+    for i in range(len(scan_surroundings)):
+        exec_branch_scan_s.add_child(
             ExecuteTrajectoryBehaviour(
-                name=f"ExecuteMoveSet1_{i}",
+                name=f"ExecuteMoveScanSurroundings_{i}",
                 blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set1[i],
-                validity_key=trajectory_valid_keys_set1[i],
+                blackboard_key=planned_trajectory_keys_set_scan_s[i],
+                validity_key=trajectory_valid_keys_set_scan_s[i],
                 node=node
             )
         )
 
-    # PlanBranch_2
-    plan_branch_2 = py_trees.composites.Sequence(name="PlanBranch_2", memory=True)
-    for i, move in enumerate(set_2):
+    # PlanPickMove
+    plan_branch_pick_move = py_trees.composites.Sequence(name="PlanPickMove", memory=True)
+    for i, move in enumerate(pick_sequence):
         move_goal = define_single_move_goal(move)
-        plan_branch_2.add_child(
+        plan_branch_pick_move.add_child(
             PlanningBehaviour(
-                name=f"PlanMoveSet2_{i}",
+                name=f"PlanMovePickMove_{i}",
                 goal=move_goal.goal,
                 blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set2[i],
-                validity_key=trajectory_valid_keys_set2[i],
-                previous_key=planned_trajectory_keys_set1[-1] if i == 0 else planned_trajectory_keys_set2[i - 1],
+                blackboard_key=planned_trajectory_keys_set_pick_move[i],
+                validity_key=trajectory_valid_keys_set_pick_move[i],
+                previous_key=planned_trajectory_keys_set_scan_s[-1] if i == 0 else planned_trajectory_keys_set_pick_move[i - 1],
                 node=node
             )
         )
 
-    # ExecBranch_2
-    exec_branch_2 = py_trees.composites.Sequence(name="ExecBranch_2", memory=True)
-    for i in range(len(set_2)):
-        exec_branch_2.add_child(
+    # ExecPickMove
+    exec_branch_pick_move = py_trees.composites.Sequence(name="ExecPickMove", memory=True)
+    for i in range(len(pick_sequence)):
+        exec_branch_pick_move.add_child(
             ExecuteTrajectoryBehaviour(
-                name=f"ExecuteMoveSet2_{i}",
+                name=f"ExecuteMovePickMove_{i}",
                 blackboard=blackboard,
-                blackboard_key=planned_trajectory_keys_set2[i],
-                validity_key=trajectory_valid_keys_set2[i],
+                blackboard_key=planned_trajectory_keys_set_pick_move[i],
+                validity_key=trajectory_valid_keys_set_pick_move[i],
                 node=node
             )
         )
 
-    # Parallel Node for ExecBranch_1 and PlanBranch_2
-    parallel_exec_plan = py_trees.composites.Parallel(
-        name="ExecBranch_1_and_PlanBranch_2",
+    # PlanRestHome
+    plan_branch_rest_home = py_trees.composites.Sequence(name="PlanRestHome", memory=True)
+    for i, move in enumerate(rest_and_home):
+        move_goal = define_single_move_goal(move)
+        plan_branch_rest_home.add_child(
+            PlanningBehaviour(
+                name=f"PlanMoveRestHome_{i}",
+                goal=move_goal.goal,
+                blackboard=blackboard,
+                blackboard_key=planned_trajectory_keys_set_home[i],
+                validity_key=trajectory_valid_keys_set_home[i],
+                previous_key=planned_trajectory_keys_set_pick_move[-1] if i == 0 else planned_trajectory_keys_set_home[i - 1],
+                node=node
+            )
+        )
+
+    # ExecRestHome
+    exec_branch_rest_home = py_trees.composites.Sequence(name="ExecRestHome", memory=True)
+    for i in range(len(rest_and_home)):
+        exec_branch_rest_home.add_child(
+            ExecuteTrajectoryBehaviour(
+                name=f"ExecuteMoveRestHome_{i}",
+                blackboard=blackboard,
+                blackboard_key=planned_trajectory_keys_set_home[i],
+                validity_key=trajectory_valid_keys_set_home[i],
+                node=node
+            )
+        )
+
+    # Parallel Node for ExecScanSurroundings and PlanPickMove
+    parallel_execScan_PlanPick = py_trees.composites.Parallel(
+        name="ExecScanSurroundings_and_PlanPickMove",
         policy=py_trees.common.ParallelPolicy.SuccessOnAll()  # All children must succeed
     )
-    parallel_exec_plan.add_child(exec_branch_1)
-    parallel_exec_plan.add_child(plan_branch_2)
+    parallel_execScan_PlanPick.add_child(exec_branch_scan_s)
+    parallel_execScan_PlanPick.add_child(plan_branch_pick_move)
 
-    # Sequence Node for ExecBranch_2 after Parallel Node
-    exec_after_plan = py_trees.composites.Sequence(name="ExecAfterPlan", memory=True)
-    exec_after_plan.add_child(parallel_exec_plan)
-    exec_after_plan.add_child(exec_branch_2)
+    # Parallel Node for ExecPickMove and PlanRestHome
+    parallel_execPick_planHome = py_trees.composites.Parallel(
+        name="ExecPickMove_and_PlanRestHome",
+        policy=py_trees.common.ParallelPolicy.SuccessOnAll()  # All children must succeed
+    )
+    parallel_execPick_planHome.add_child(exec_branch_pick_move)
+    parallel_execPick_planHome.add_child(plan_branch_rest_home)
+
+    # Sequence Node for ExecBranch_2 after Parallel Nodes
+    execHome = py_trees.composites.Sequence(name="execHomePlan", memory=True)
+    execHome.add_child(parallel_execPick_planHome)
+    execHome.add_child(exec_branch_rest_home)
 
     # --------------------------------------------------------------------------
     # 5) Build the Behavior Tree
     # --------------------------------------------------------------------------
     root = py_trees.composites.Sequence(name="RootSequence", memory=True)
-    root.add_child(plan_branch_1)  # Plan Set 1 first
-    root.add_child(exec_after_plan)  # Execute Set 1 while planning Set 2, then Execute Set 2
+    root.add_child(plan_branch_scan_s)
+    root.add_child(parallel_execScan_PlanPick)
+    root.add_child(execHome)
 
     bt_tree = py_trees_ros.trees.BehaviourTree(root)
 
