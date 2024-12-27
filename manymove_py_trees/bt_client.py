@@ -37,7 +37,7 @@ def main():
     )
 
     approach_target = Pose(
-        position=Point(x=0.2, y=-0.1, z=pick_target.position.x + 0.05),
+        position=Point(x=0.2, y=-0.1, z=pick_target.position.z + 0.02),
         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
     )
 
