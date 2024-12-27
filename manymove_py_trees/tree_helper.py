@@ -3,7 +3,7 @@
 import py_trees
 import py_trees_ros
 from manymove_py_trees.move_definitions import define_single_move_goal, Move
-from manymove_py_trees.planning_behavior import PlanningBehaviour
+from manymove_py_trees.planning_behavior import PlanningActionBehaviour
 from manymove_py_trees.execution_behavior import ExecuteTrajectoryBehaviour
 from typing import List
 
@@ -73,7 +73,7 @@ def create_tree_from_sequences(
             else:
                 previous_key = None
 
-            plan_behavior = PlanningBehaviour(
+            plan_behavior = PlanningActionBehaviour(
                 name=f"PlanMove_{seq_index}_{i}",
                 goal=single_goal,
                 blackboard=blackboard,

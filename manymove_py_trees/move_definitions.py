@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from manymove_planner.action import MoveManipulator, MoveManipulatorSequence
 from manymove_planner.msg import MovementConfig, MoveManipulatorGoal
-from manymove_planner.srv import PlanManipulator
+from manymove_planner.action import PlanManipulator
 from manymove_planner.action import ExecuteTrajectory
 
 import rclpy
@@ -36,8 +36,8 @@ def define_movement_configs() -> dict:
     max_move_config.smoothing_type = "time_optimal"
 
     mid_move_config = MovementConfig()
-    mid_move_config.velocity_scaling_factor = 0.5  # 1.0 / 2.0
-    mid_move_config.acceleration_scaling_factor = 0.5  # 1.0 / 2.0
+    mid_move_config.velocity_scaling_factor = max_move_config.velocity_scaling_factor / 2.0 # 1.0 / 2.0
+    mid_move_config.acceleration_scaling_factor = max_move_config.acceleration_scaling_factor / 2.0 # 1.0 / 2.0
     mid_move_config.step_size = 0.01
     mid_move_config.jump_threshold = 0.0
     mid_move_config.max_cartesian_speed = 0.2
@@ -47,8 +47,8 @@ def define_movement_configs() -> dict:
     mid_move_config.smoothing_type = "time_optimal"
 
     slow_move_config = MovementConfig()
-    slow_move_config.velocity_scaling_factor = 0.25  # 1.0 / 4.0
-    slow_move_config.acceleration_scaling_factor = 0.25  # 1.0 / 4.0
+    slow_move_config.velocity_scaling_factor = max_move_config.velocity_scaling_factor / 40  # 1.0 / 4.0
+    slow_move_config.acceleration_scaling_factor = max_move_config.acceleration_scaling_factor / 4.0 # 1.0 / 4.0
     slow_move_config.step_size = 0.01
     slow_move_config.jump_threshold = 0.0
     slow_move_config.max_cartesian_speed = 0.05

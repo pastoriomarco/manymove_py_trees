@@ -56,8 +56,8 @@ def main():
     ]
 
     rest_and_home = [
-        create_move("joint", joint_values=joint_rest, config=movement_configs["max_move"]),
         create_move("named", named_target=named_home, config=movement_configs["mid_move"]),
+        create_move("joint", joint_values=joint_rest, config=movement_configs["max_move"]),
     ]
 
     # 3) Build the tree with our parallel plan/exec logic
