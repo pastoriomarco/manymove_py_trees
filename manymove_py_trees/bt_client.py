@@ -4,7 +4,6 @@ import rclpy
 from rclpy.node import Node
 
 import py_trees
-import py_trees_ros
 
 from geometry_msgs.msg import Pose, Point, Quaternion
 
@@ -41,28 +40,44 @@ def main():
         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
     )
 
-    # Exactly like your original definitions:
-    scan_surroundings = [
-        create_move("joint", joint_values=joint_rest, config=movement_configs["mid_move"]),
-        create_move("joint", joint_values=joint_look_sx, config=movement_configs["max_move"]),
-        create_move("joint", joint_values=joint_look_dx, config=movement_configs["max_move"]),
-        create_move("joint", joint_values=joint_rest, config=movement_configs["mid_move"]),
+    # Define move sequences:
+
+    # First, a single move: in the create_tree_from_sequence function, it will be planned alone and will take less time to process
+    # The next sequence of moves will be then be planned while the first is executing
+    rest_position = [
+        create_move("joint", joint_values=joint_rest, config=movement_configs["max_move"]),
     ]
 
+    # This sequence scans the surroundings to build the octomap
+    scan_surroundings = [
+        #create_move("joint", joint_values=joint_rest, config=movement_configs["mid_move"]),
+        create_move("joint", joint_values=joint_look_sx, config=movement_configs["max_move"]),
+        create_move("joint", joint_values=joint_look_dx, config=movement_configs["max_move"]),
+    ]
+
+    # This sequence simulates a series of moves typical when picking up an object, minus the commands to action the gripper that are under construction
     pick_sequence = [
         create_move("pose", target=approach_target, config=movement_configs["mid_move"]),
         create_move("cartesian", target=pick_target, config=movement_configs["slow_move"]),
         create_move("cartesian", target=approach_target, config=movement_configs["max_move"]),
     ]
 
-    rest_and_home = [
-        create_move("named", named_target=named_home, config=movement_configs["mid_move"]),
-        create_move("joint", joint_values=joint_rest, config=movement_configs["max_move"]),
+    home_position = [
+        create_move("named", named_target=named_home, config=movement_configs["max_move"]),
     ]
 
     # 3) Build the tree with our parallel plan/exec logic
-    list_of_sequences = [scan_surroundings, pick_sequence, rest_and_home]
-    bt_tree = create_tree_from_sequences(node, list_of_sequences, root_name="RootSequence")
+    list_of_sequences = [rest_position, scan_surroundings, pick_sequence, home_position]
+    bt_tree = create_tree_from_sequences(node, list_of_sequences, root_name="LogicSequence")
+
+    # This decorator will repeat the sequence indefinitely, for test purposes
+    repeated_root = py_trees.decorators.Repeat(
+    child=bt_tree.root,
+    num_success=-1,   # means repeat indefinitely
+    name="RepeatForever"
+    )
+
+    bt_tree.root = repeated_root
 
     # 4) Setup
     try:

@@ -7,6 +7,11 @@ from manymove_py_trees.planning_behavior import PlanningActionBehaviour
 from manymove_py_trees.execution_behavior import ExecuteTrajectoryBehaviour
 from typing import List
 
+# This helper function parallelizes the planning and the execution of a series of moves
+# The sequences will be treated as single moves for planning and execution, instead of planning to obtain a single trajectory to be then executed:
+# The reason for this is to be able in the future to intercept a failed execution and to replan only the last move, and not the whole trajectory
+# Replanning the whole trajectory would be simpler, but the execution from a random point to the first of the sequence may pose problems
+# Instead, replanning from the current position to the point that was previously requested is more coherent with the intended behavior
 def create_tree_from_sequences(
     node,
     list_of_move_sequences: List[List[Move]],
