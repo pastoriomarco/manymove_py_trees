@@ -79,22 +79,26 @@ def main():
 
     # 3) Build the tree with our parallel plan/exec logic
     list_of_sequences = [rest_position, scan_surroundings, pick_sequence, home_position]
+    # this chained branch executes faster: it leverages a more parallel computation of the following moves since the parallelization in python is not perfect
     chained_branch = create_tree_from_sequences(node, list_of_sequences, root_name="LogicSequence")
 
-    rest_branch= create_tree_from_sequence(node, rest_position, root_name="Rest_Sequence")
-    scan_branch= create_tree_from_sequence(node, scan_surroundings, root_name="Scan_Sequence")
-    pick_branch= create_tree_from_sequence(node, pick_sequence, root_name="Pick_Sequence")
-    home_branch= create_tree_from_sequence(node, home_position, root_name="Home_Sequence")
+    # # Here I define sequence per sequence to test other ways of building the sequence. This results slower than create_tree_from_sequences
+    # rest_branch= create_tree_from_sequence(node, rest_position, root_name="Rest_Sequence")
+    # scan_branch= create_tree_from_sequence(node, scan_surroundings, root_name="Scan_Sequence")
+    # pick_branch= create_tree_from_sequence(node, pick_sequence, root_name="Pick_Sequence")
+    # home_branch= create_tree_from_sequence(node, home_position, root_name="Home_Sequence")
 
-    whole_seq_branch= create_tree_from_sequence_v2(node, whole_sequence, root_name="Whole_Sequence")
+    # # This also results slower than create_tree_from_sequences:
+    # whole_seq_branch= create_tree_from_sequence_v2(node, whole_sequence, root_name="Whole_Sequence")
 
     main_seq = py_trees.composites.Sequence("Main_Sequence", True)
     main_seq.add_child(chained_branch.root)
-    main_seq.add_child(rest_branch.root)
-    main_seq.add_child(scan_branch.root)
-    main_seq.add_child(pick_branch.root)
-    main_seq.add_child(home_branch.root)
-    main_seq.add_child(whole_seq_branch.root)
+
+    # main_seq.add_child(rest_branch.root)
+    # main_seq.add_child(scan_branch.root)
+    # main_seq.add_child(pick_branch.root)
+    # main_seq.add_child(home_branch.root)
+    # main_seq.add_child(whole_seq_branch.root)
 
     # This decorator will repeat the sequence indefinitely, for test purposes
     repeated_root = py_trees.decorators.Repeat(
