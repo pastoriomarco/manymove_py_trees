@@ -39,7 +39,3 @@ ros2 launch manymove_bringup lite_movegroup_fake_py_trees.launch.py
 ## Dependencies
 - `rclpy`, `py_trees`, `py_trees_ros`
 - `manymove_planner`, `manymove_msgs`
-
-## License and Maintainers
-This package is licensed under BSD-3-Clause. Maintainer: Marco Pastorio <pastoriomarco@gmail.com>.
-See main [ManyMove README](../README.md) for `CONTRIBUTION` details.
