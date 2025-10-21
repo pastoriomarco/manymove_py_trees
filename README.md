@@ -1,5 +1,9 @@
 # manymove_py_trees
 
+## DRAFT/EXAMPLE Repo
+
+This repository is currently still a draft and serves as an example on how to leverage py_trees on ManyMove instead of 
+
 ## Overview
 - Provides a `py_trees`-based framework for orchestrating manipulation sequences in the ManYMove stack.
 - Wraps the `manymove_msgs/MoveManipulator` action in a reusable behaviour so planners can be built as trees instead of bespoke action clients.
@@ -13,7 +17,9 @@
 - Example clients `bt_client_fake.py` and `bt_client_panda.py` show how to wire the helpers into full ROS 2 nodes that tick a tree while sharing an HMI service.
 
 ## Usage
-- For workspace setup, dependencies, and launch instructions, follow the top-level [ManyMove README](../README.md).
+- For workspace setup, dependencies, and launch instructions, follow [ManyMove README](https://github.com/pastoriomarco/manymove/blob/main/README.md).
+- Clone manymove_py_trees in the same src folder as ManyMove, build and source the workspace.
+- You can find examples in manymove_py_trees/launch folder.
 
 ## Dependencies
 - `rclpy`, `py_trees`, `py_trees_ros`
