@@ -17,9 +17,24 @@ This repository is currently still a draft and serves as an example on how to le
 - Example clients `bt_client_fake.py` and `bt_client_panda.py` show how to wire the helpers into full ROS 2 nodes that tick a tree while sharing an HMI service.
 
 ## Usage
+- Install via apt `ros-$ROS_DISTRO-py-trees` and `ros-$ROS_DISTRO-py-trees-ros` packages
 - For workspace setup, dependencies, and launch instructions, follow [ManyMove README](https://github.com/pastoriomarco/manymove/blob/main/README.md).
 - Clone manymove_py_trees in the same src folder as ManyMove, build and source the workspace.
 - You can find examples in manymove_py_trees/launch folder.
+
+Available launchers:
+
+```bash
+ros2 launch manymove_bringup panda_movegroup_fake_py_trees.launch.py
+```
+
+```bash
+ros2 launch manymove_bringup lite_movegroup_fake_py_trees.launch.py
+```
+
+## Credits
+
+- **py_trees_ros** from [splintered-reality/py_trees_ros](https://github.com/splintered-reality/py_trees_ros), installed through ROS dependencies, including its visualizer **ros-humble-py-trees-ros-viewer**.
 
 ## Dependencies
 - `rclpy`, `py_trees`, `py_trees_ros`
