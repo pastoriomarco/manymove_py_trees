@@ -24,7 +24,3 @@ This repository is currently still a draft and serves as an example on how to le
 ## Dependencies
 - `rclpy`, `py_trees`, `py_trees_ros`
 - `manymove_planner`, `manymove_msgs`
-
-## License and Maintainers
-This package is licensed under BSD-3-Clause. Maintainer: Marco Pastorio <pastoriomarco@gmail.com>.
-See main [ManyMove README](../README.md) for `CONTRIBUTION` details.
